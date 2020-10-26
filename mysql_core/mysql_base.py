@@ -123,7 +123,7 @@ class Mysql(Integration):
                     topts[k] = pymysql_def_opts[k]
 
             try:
-                inst['session'] = pymysql.connect(
+                inst['connection'] = pymysql.connect(
                                         user=inst['user'], password=mypass, host=inst['host'], port=inst['port'], 
                                         database=topts['database'], unix_socket=topts['unix_socket'], charset=topts['charset'], sql_mode=topts['sql_mode'],
                                         read_default_file=topts['read_default_file'], conv=topts['conv'], use_unicode=topts['use_unicode'], client_flag=topts['client_flag'],
