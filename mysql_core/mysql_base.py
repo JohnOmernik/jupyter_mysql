@@ -123,7 +123,7 @@ class Mysql(Integration):
                     topts[k] = pymysql_def_opts[k]
 
             try:
-                inst['connection'] = pymysql.connect(
+                inst['session'] = pymysql.connect(
                                         user=inst['user'], password=mypass, host=inst['host'], port=inst['port'], 
                                         database=topts['database'], unix_socket=topts['unix_socket'], charset=topts['charset'], sql_mode=topts['sql_mode'],
                                         read_default_file=topts['read_default_file'], conv=topts['conv'], use_unicode=topts['use_unicode'], client_flag=topts['client_flag'],
@@ -133,7 +133,6 @@ class Mysql(Integration):
                                         auth_plugin_map=topts['auth_plugin_map'], read_timeout=topts['read_timeout'], write_timeout=topts['write_timeout'], 
                                         bind_address=topts['bind_address'], binary_prefix=topts['binary_prefix'], program_name=topts['program_name'], server_public_key=topts['server_public_key']
                                       )
-#                inst['session'] = inst['connection'].cursor()
                 result = 0
             except Exception as e:
                 # MySQL Errors go here
