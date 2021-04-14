@@ -36,28 +36,16 @@ class Mysql(Integration):
     myopts['mysql_conn_default'] = ['default', 'Default instance name to use for connections']
 
     # Class Init function - Obtain a reference to the get_ipython()
-    def __init__(self, shell, pd_display_grid="html", mysql_conn_url_default="", debug=False, *args, **kwargs):
-        super(Mysql, self).__init__(shell, debug=debug, pd_display_grid=pd_display_grid)
-        self.debug = debug
 
-        self.opts['pd_display_grid'][0] = pd_display_grid
-        if pd_display_grid == "qgrid":
-            try:
-                import qgrid
-            except:
-                print ("WARNING - QGRID SUPPORT FAILED - defaulting to html")
-                self.opts['pd_display_grid'][0] = "html"
+    def __init__(self, shell, debug=False, *args, **kwargs):
+        super(Mysql, self).__init__(shell, debug=debug)
+        self.debug = debug
 
         #Add local variables to opts dict
         for k in self.myopts.keys():
             self.opts[k] = self.myopts[k]
 
         self.load_env(self.custom_evars)
-        if mysql_conn_url_default != "":
-            if "default" in self.instances.keys():
-                print("Warning: default instance in ENV and passed to class creation - overwriting ENV")
-            self.fill_instance("default", mysql_conn_url_default)
-                
         self.parse_instances()
 
 
@@ -198,9 +186,29 @@ class Mysql(Integration):
         return mydf, status
 
 # Display Help can be customized
-    def customHelp(self):
+    def customOldHelp(self):
         self.displayIntegrationHelp()
         self.displayQueryHelp("select * from `mydatabase`.`mytable`")
+
+
+    def retCustomDesc(self):
+        return "Jupyter integration for working with the MySQL based datasource"
+
+
+    def customHelp(self, curout):
+        n = self.name_str
+        mn = self.magic_name
+        m = "%" + mn
+        mq = "%" + m
+        table_header = "| Magic | Description |\n"
+        table_header += "| -------- | ----- |\n"
+        out = curout
+        qexamples = []
+        qexamples.append(["myinstance", "select * from mydatabase.mytable", "Run a sql query against myinstance"])
+        qexamples.append(["", "select * from mydatabase.mytable", "Run a sql query against the default instance"])
+        out += self.retQueryHelp(qexamples)
+
+        return out
 
 
     # This is the magic name.
