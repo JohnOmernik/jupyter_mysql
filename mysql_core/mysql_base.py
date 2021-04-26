@@ -16,7 +16,7 @@ from IPython.core.display import HTML
 # Your Specific integration imports go here, make sure they are in requirements!
 
 import pymysql
-
+import jupyter_integrations_utility as jiu
 #import IPython.display
 from IPython.display import display_html, display, Javascript, FileLink, FileLinks, Image
 import ipywidgets as widgets
