@@ -1,227 +1,60 @@
 #!/usr/bin/python
 
-# Base imports for all integrations, only remove these at your own risk!
-import json
-import sys
-import os
-import time
-import pandas as pd
-from collections import OrderedDict
-
-from integration_core import Integration
-
 from IPython.core.magic import (Magics, magics_class, line_magic, cell_magic, line_cell_magic)
-from IPython.core.display import HTML
-
-# Your Specific integration imports go here, make sure they are in requirements!
-
-import pymysql
-import jupyter_integrations_utility as jiu
-#import IPython.display
-from IPython.display import display_html, display, Javascript, FileLink, FileLinks, Image
-import ipywidgets as widgets
-
+from mysql_core._version import __desc__
 @magics_class
-class Mysql(Integration):
+class Mysql(Magics):
     # Static Variables
     # The name of the integration
     name_str = "mysql"
-    instances = {} 
-    custom_evars = ['mysql_conn_default']
-    # These are the variables in the opts dict that allowed to be set by the user. These are specific to this custom integration and are joined
-    # with the base_allowed_set_opts from the integration base
-    custom_allowed_set_opts = ['mysql_conn_default']
+    magic_name = name_str
+    debug = False
+    # {name_str}_base is used for first load
+    # {name_str}_full is used after first load
 
-    myopts = {} 
-    myopts['mysql_conn_default'] = ['default', 'Default instance name to use for connections']
-
-    # Class Init function - Obtain a reference to the get_ipython()
 
     def __init__(self, shell, debug=False, *args, **kwargs):
         super(Mysql, self).__init__(shell, debug=debug)
         self.debug = debug
 
-        #Add local variables to opts dict
-        for k in self.myopts.keys():
-            self.opts[k] = self.myopts[k]
-
-        self.load_env(self.custom_evars)
-        self.parse_instances()
-
-
-    # We use a custom disconnect in pyodbc so we try to close the connection before nuking it
-    def customDisconnect(self, instance):
-        try:
-            self.instances[instance]['connection'].close()
-        except:
-            pass
-        self.instances[instance]['connection'] = None
-        self.instances[instance]['session'] = None
-        self.instances[instance]['connected'] = False
-        #self.instances[instance]['connect_pass'] = None # Should we clear the password when we disconnect? I am going to change this to no for now 
-
-
-    def req_password(self, instance):
-        opts = None
-        retval = True
-        try:
-            opts = self.instances[instance]['options']
-        except:
-            print("Instance %s options not found" % instance)
-        try:
-            if opts['use_integrated_security'] == 1:
-                retval = False
-        except:
-            pass
-        return retval
-
-    def customAuth(self, instance):
-        result = -1
-        inst = None
-        if instance not in self.instances.keys():
-            result = -3
-            print("Instance %s not found in instances - Connection Failed" % instance)
-        else:
-            inst = self.instances[instance]
-        # Defaults
-
-        pymysql_def_opts = { "database": None, "unix_socket": None, "charset":'', "sql_mode": None, "read_default_file": None, "conv": None, "use_unicode": None, 
-                     "client_flag": 0, "init_command": None, "connect_timeout": 10, "ssl": None,  "read_default_group": None, "compress": None, "named_pipe": None,
-                     "autocommit": False, "db": None,  "local_infile": False, "max_allowed_packet": 16777216, "defer_connect": False, "auth_plugin_map": None, 
-                     "read_timeout": None, "write_timeout": None, "bind_address": None, "binary_prefix": False, "program_name": None, "server_public_key": None}
-
-        if inst is not None:
-            # Get Password, else, get the default connections pass 
-            mypass = ""
-            if inst['connect_pass'] is not None:
-                mypass = inst['connect_pass']
-            else:
-                mypass = self.instances[self.opts[self.name_str + "_conn_default"][0]]['connect_pass']
-
-
-            # ALlow any set options
-            topts = {}
-
-
-            # Since we pass the defaults explicitly, basically, if we have the option in our connect string use it, or use the default
-            for k in pymysql_def_opts.keys():
-                if k in inst['options']:
-                    topts[k] = inst['options'][k]
-                else:
-                    topts[k] = pymysql_def_opts[k]
-
-            try:
-                inst['session'] = pymysql.connect(
-                                        user=inst['user'], password=mypass, host=inst['host'], port=inst['port'], 
-                                        database=topts['database'], unix_socket=topts['unix_socket'], charset=topts['charset'], sql_mode=topts['sql_mode'],
-                                        read_default_file=topts['read_default_file'], conv=topts['conv'], use_unicode=topts['use_unicode'], client_flag=topts['client_flag'],
-                                        init_command=topts['init_command'], connect_timeout=topts['connect_timeout'], ssl=topts['ssl'], read_default_group=topts['read_default_group'],
-                                        compress=topts['compress'], named_pipe=topts['named_pipe'], autocommit=topts['autocommit'], db=topts['db'], 
-                                        local_infile=topts['local_infile'], max_allowed_packet=topts['max_allowed_packet'], defer_connect=topts['defer_connect'], 
-                                        auth_plugin_map=topts['auth_plugin_map'], read_timeout=topts['read_timeout'], write_timeout=topts['write_timeout'], 
-                                        bind_address=topts['bind_address'], binary_prefix=topts['binary_prefix'], program_name=topts['program_name'], server_public_key=topts['server_public_key']
-                                      )
-                result = 0
-            except Exception as e:
-                # MySQL Errors go here
-                print("Unable to connect to Mysql instance %s at %s\n Exception:%s" % (instance, inst["conn_url"], str(e)))
-                result = -2
-
-        return result
-
-    def validateQuery(self, query, instance):
-
-        bRun = True
-        bReRun = False
-        if self.instances[instance]['last_query'] == query:
-            # If the validation allows rerun, that we are here:
-            bReRun = True
-        # Ok, we know if we are rerun or not, so let's now set the last_query (and last use if needed) 
-        self.instances[instance]['last_query'] = query
-        if query.strip().find("use ") == 0:
-            self.instances[instance]['last_use'] = query
-
-
-        # Example Validation
-
-        # Warn only - Don't change bRun
-        # This one is looking for a ; in the query. We let it run, but we warn the user
-        # Basically, we print a warning but don't change the bRun variable and the bReRun doesn't matter
-        if query.find(";") >= 0:
-            print("WARNING - Do not type a trailing semi colon on queries, your query will fail (like it probably did here)")
-
-        # Warn and don't submit after first attempt - Second attempt go ahead and run
-        # If the query doesn't have a day query, then maybe we want to WARN the user and not run the query.
-        # However, if this is the second time in a row that the user has submitted the query, then they must want to run without day
-        # So if bReRun is True, we allow bRun to stay true. This ensures the user to submit after warnings
-        if query.lower().find("limit ") < 0:
-            print("WARNING - Queries shoud have a limit so you don't bonkers your DOM")
-        # Warn and do not allow submission
-        # There is no way for a user to submit this query 
-#        if query.lower().find('limit ") < 0:
-#            print("ERROR - All queries must have a limit clause - Query will not submit without out")
-#            bRun = False
-        return bRun
-
-    def customQuery(self, query, instance):
-
-        mydf = None
-        status = ""
-        try:
-            mydf = pd.read_sql(query, self.instances[instance]['session'])
-            if len(mydf) == 0: # For queries that could have results, but don't (select * from table, but table is empty)
-                mydf = "None"
-                status = "Success - No Results"
-            else:
-                status = "Success"
-        except TypeError:  # For queries like "use database" that never return results
-            mydf = None
-            status = "Success - No Results"
-        except Exception as e:
-            mydf = None
-            str_err = str(e)
+        # Check namespace for integration and addon dicts
+        if "jupyter_loaded_integrations" not in self.shell.user_ns:
             if self.debug:
-                print("Error: %s" % str(e))
-            status = "Failure - query_error: " + str_err
-        return mydf, status
+                print("jupyter_loaded_integrations not found in ns: adding")
+            self.shell.user_ns['jupyter_loaded_integrations'] = {}
+        if "jupyter_loaded_addons" not in self.shell.user_ns:
+            if self.debug:
+                print("jupyter_loaded_addons not found in ns: adding")
+            self.shell.user_ns['jupyter_loaded_addons'] = {}
 
-# Display Help can be customized
-    def customOldHelp(self):
-        self.displayIntegrationHelp()
-        self.displayQueryHelp("select * from `mydatabase`.`mytable`")
+        # Check to see if our name_str is in loaded integrations (it shouldn't be)
+        if self.name_str in self.shell.user_ns['jupyter_loaded_integrations']:
+            print(f"Potenital Multiverse collision of names: {self.name_str}")
+            print(self.shell.user_ns['jupyter_loaded_integrations'])
+        else:
+            # This is where add our base version
+            self.shell.user_ns['jupyter_loaded_integrations'][self.name_str] = f"{self.name_str}_base"
 
-
+    # This returns the description 
     def retCustomDesc(self):
-        return "Jupyter integration for working with the MySQL based datasource"
+        return __desc__
 
+    # The line cell magic to fully load this integrations
 
-    def customHelp(self, curout):
-        n = self.name_str
-        mn = self.magic_name
-        m = "%" + mn
-        mq = "%" + m
-        table_header = "| Magic | Description |\n"
-        table_header += "| -------- | ----- |\n"
-        out = curout
-        qexamples = []
-        qexamples.append(["myinstance", "select * from mydatabase.mytable", "Run a sql query against myinstance"])
-        qexamples.append(["", "select * from mydatabase.mytable", "Run a sql query against the default instance"])
-        out += self.retQueryHelp(qexamples)
-
-        return out
-
-
-    # This is the magic name.
     @line_cell_magic
     def mysql(self, line, cell=None):
-        if cell is None:
-            line = line.replace("\r", "")
-            line_handled = self.handleLine(line)
-            if self.debug:
-                print("line: %s" % line)
-                print("cell: %s" % cell)
-            if not line_handled: # We based on this we can do custom things for integrations. 
-                print("I am sorry, I don't know what you want to do with your line magic, try just %" + self.name_str + " for help options")
-        else: # This is run is the cell is not none, thus it's a cell to process  - For us, that means a query
-            self.handleCell(cell, line)
+        if not self.name_str in self.shell.user_ns['jupyter_loaded_integrations']:
+            print(f"Somehow we got here and {self.name_str} is not in loaded integrations - Unpossible")
+        else:
+            if self.shell.user_ns['jupyter_loaded_integrations'][self.name_str] != f"{self.name_str}_base":
+                print(f"We should only get here with a {self.name_str}_base state. Currently for {self.name_str}: {self.shell.user_ns['jupyter_loaded_integrations'][self.name_str]}")
+            else:
+                if self.debug:
+                    print(f"Loading full {self.name_str} from base")
+                full_load = f"from {self.name_str}_core.{self.name_str}_full import {self.name_str.capitalize()}\n{self.name_str}_full = {self.name_str.capitalize()}(ipy, debug={str(self.debug)})\nipy.register_magics({self.name_str}_full)\n"
+                if self.debug:
+                    print("Load Code: {full_load}")
+                self.shell.ex(full_load)
+                self.shell.user_ns['jupyter_loaded_integrations'][self.name_str] = f"{self.name_str}_full"
+                self.shell.run_cell_magic(self.name_str, line, cell)
 
